@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": {
+      "@docuextract/db": ["../../packages/db/src/index.ts"],
+      "@docuextract/queue": ["../../packages/queue/src/index.ts"],
+      "@docuextract/types": ["../../packages/types/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "../../packages/*/src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

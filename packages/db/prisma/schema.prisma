@@ -1,0 +1,165 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  admin
+  reviewer
+}
+
+enum JobStatus {
+  queued
+  extracting
+  enriching
+  pending_review
+  complete
+  failed
+}
+
+enum TransactionStatus {
+  raw
+  approved
+  needs_review
+  reviewed
+}
+
+enum DocumentCategory {
+  SOA
+  INVOICE
+  CN
+  PAYMENT
+}
+
+enum GLMatchMethod {
+  vendor_override
+  keyword
+  fallback
+  manual
+  payment_skip
+}
+
+enum CreditorType {
+  TRADE
+  OTHERS
+}
+
+enum ReviewReason {
+  vendor_unmatched
+  gl_unmatched
+  low_confidence
+  row_count_mismatch
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(reviewer)
+  createdAt    DateTime @default(now())
+
+  reviewedTransactions Transaction[] @relation("ReviewedBy")
+
+  @@map("users")
+}
+
+model Client {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  jobs            Job[]
+  vendorMasters   VendorMaster[]
+  chartOfAccounts ChartOfAccount[]
+
+  @@map("clients")
+}
+
+model VendorMaster {
+  id           String       @id @default(uuid())
+  clientId     String
+  vendorName   String
+  vendorCode   String
+  creditorType CreditorType @default(TRADE)
+  aliases      String[]
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@map("vendor_master")
+}
+
+model ChartOfAccount {
+  id                 String  @id @default(uuid())
+  clientId           String
+  glCode             String
+  glLabel            String
+  keywords           String[]
+  vendorCodeOverride String?
+  outletOverride     String?
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@map("chart_of_accounts")
+}
+
+model Job {
+  id               String    @id @default(uuid())
+  clientId         String
+  outletCode       String
+  fileUrl          String
+  originalFilename String
+  status           JobStatus @default(queued)
+  totalRows        Int       @default(0)
+  approvedRows     Int       @default(0)
+  reviewRows       Int       @default(0)
+  errorMessage     String?
+  createdAt        DateTime  @default(now())
+  completedAt      DateTime?
+
+  client       Client        @relation(fields: [clientId], references: [id])
+  transactions Transaction[]
+
+  @@map("jobs")
+}
+
+model Transaction {
+  id                  String            @id @default(uuid())
+  jobId               String
+  outletCode          String
+  pageNumber          Int               @default(0)
+  date                DateTime
+  documentDescription String
+  invoiceNumber       String?
+  cnNumber            String?
+  debit               Decimal?          @db.Decimal(10, 2)
+  credit              Decimal?          @db.Decimal(10, 2)
+  documentCategory    DocumentCategory
+  documentType        String?
+  vendorNameRaw       String
+  vendorCode          String?
+  vendorNameMatched   String?
+  glCode              String?
+  glLabel             String?
+  vendorMatchScore    Float?
+  glMatchMethod       GLMatchMethod?
+  status              TransactionStatus @default(raw)
+  reviewedById        String?
+  reviewedAt          DateTime?
+  confidence          Float?
+  extractionRemarks   String?
+  reviewReason        ReviewReason?
+  reviewNotes         String?
+
+  job        Job   @relation(fields: [jobId], references: [id])
+  reviewedBy User? @relation("ReviewedBy", fields: [reviewedById], references: [id])
+
+  @@map("transactions")
+}

@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #0e0f11;
+  --color-surface-card: #16181c;
+  --color-surface-raised: #1e2026;
+  --color-surface-border: #2a2d35;
+  --color-accent: #4f8ef7;
+  --color-accent-muted: #1e3a6e;
+  --font-family-sans: 'DM Sans', sans-serif;
+  --font-family-mono: 'DM Mono', monospace;
+}

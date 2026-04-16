@@ -1,0 +1,22 @@
+{
+  "name": "docuextract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-powered vendor statement extraction system",
+  "scripts": {
+    "dev:gateway": "pnpm --filter gateway dev",
+    "dev:extraction": "pnpm --filter extraction dev",
+    "dev:enrichment": "pnpm --filter enrichment dev",
+    "dev:all": "concurrently \"pnpm run dev:gateway\" \"pnpm run dev:extraction\" \"pnpm run dev:enrichment\"",
+    "build:all": "pnpm -r run build",
+    "clean": "pnpm -r run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}

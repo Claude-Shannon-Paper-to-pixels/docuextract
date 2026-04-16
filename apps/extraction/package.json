@@ -1,0 +1,29 @@
+{
+  "name": "extraction",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file .env src/worker.ts",
+    "build": "tsc",
+    "start": "node --env-file .env dist/worker.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@docuextract/db": "workspace:*",
+    "@docuextract/queue": "workspace:*",
+    "@docuextract/types": "workspace:*",
+    "@google/genai": "^1.0.0",
+    "fastify": "^4.26.0",
+    "@fastify/swagger": "^8.15.0",
+    "@fastify/swagger-ui": "^4.1.0",
+    "@google/generative-ai": "^0.24.1",
+    "bullmq": "^5.0.0",
+    "ioredis": "^5.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
