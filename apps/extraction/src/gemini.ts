@@ -1,4 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { PDFDocument } from 'pdf-lib';
 import * as fs from 'node:fs';
 import { MOCK_EXTRACTION_CSV } from './geminiMock.js';
 
@@ -7,7 +8,8 @@ import { MOCK_EXTRACTION_CSV } from './geminiMock.js';
 // GEMINI_MODEL          — optional, defaults to gemini-2.0-flash
 // GEMINI_TEMPERATURE    — optional, defaults to 0.1 (low = more deterministic CSV output)
 // GEMINI_MAX_TOKENS     — optional, defaults to 8192
-// GEMINI_MAX_PDF_MB     — optional, defaults to 20 (inline base64 size limit)
+// GEMINI_MAX_PDF_MB     — optional, defaults to 20 (inline base64 size limit for single-call path)
+// GEMINI_CHUNK_PAGES    — optional, defaults to 3 (pages per Gemini call; PDFs with more pages are split)
 
 
 
@@ -49,6 +51,17 @@ function getMaxPdfBytes(): number {
   const mb = raw ? parseInt(raw, 10) : 20;
   if (isNaN(mb) || mb < 1) return 20 * 1024 * 1024;
   return mb * 1024 * 1024;
+}
+
+function getChunkPages(): number {
+  const raw = process.env.GEMINI_CHUNK_PAGES;
+  if (!raw) return 3;
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed < 1) {
+    console.warn(`[Gemini] Invalid GEMINI_CHUNK_PAGES "${raw}" — using 3`);
+    return 3;
+  }
+  return parsed;
 }
 
 // ─── Extraction prompt ────────────────────────────────────────────────────────
@@ -126,6 +139,68 @@ If a vendor's table continues on the next page without a new letterhead, treat i
 Wrap values containing commas in double quotes.
 `;
 
+// ─── PDF splitting helpers ────────────────────────────────────────────────────
+
+async function splitPdfIntoChunks(
+  pdfBuffer: Buffer,
+  chunkSize: number,
+  totalPages: number,
+): Promise<{ buffer: Buffer; startPage: number; endPage: number }[]> {
+  const srcDoc = await PDFDocument.load(pdfBuffer);
+  const chunks: { buffer: Buffer; startPage: number; endPage: number }[] = [];
+
+  for (let start = 0; start < totalPages; start += chunkSize) {
+    const end = Math.min(start + chunkSize, totalPages);
+    const chunkDoc = await PDFDocument.create();
+    const indices = Array.from({ length: end - start }, (_, i) => start + i);
+    const copiedPages = await chunkDoc.copyPages(srcDoc, indices);
+    copiedPages.forEach((page) => chunkDoc.addPage(page));
+    const bytes = await chunkDoc.save();
+    chunks.push({ buffer: Buffer.from(bytes), startPage: start + 1, endPage: end });
+  }
+
+  return chunks;
+}
+
+async function callGemini(
+  model: GenerativeModel,
+  pdfBuffer: Buffer,
+  originalFilename: string,
+  chunkNote?: string,
+): Promise<string> {
+  const base64Data = pdfBuffer.toString('base64');
+  const prompt = chunkNote
+    ? `${EXTRACTION_PROMPT}\n\nFilename: ${originalFilename}\n\nNote: ${chunkNote}`
+    : `${EXTRACTION_PROMPT}\n\nFilename: ${originalFilename}`;
+
+  const result = await model.generateContent([
+    { inlineData: { mimeType: 'application/pdf', data: base64Data } },
+    { text: prompt },
+  ]);
+
+  const text = result.response.text();
+  if (!text || !text.trim()) {
+    throw new Error('Gemini returned an empty response — check model availability and PDF content');
+  }
+  return text;
+}
+
+function mergeChunkedCSV(fragments: string[]): string {
+  if (fragments.length === 0) return '';
+  if (fragments.length === 1) return fragments[0];
+
+  const allLines: string[] = [];
+  for (let i = 0; i < fragments.length; i++) {
+    const lines = fragments[i].split('\n').filter((l) => l.trim() !== '');
+    if (i === 0) {
+      allLines.push(...lines);
+    } else {
+      allLines.push(...lines.slice(1)); // strip header from subsequent chunks
+    }
+  }
+  return allLines.join('\n');
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function extractFromPDF(
@@ -146,46 +221,52 @@ export async function extractFromPDF(
   const temperature = getTemperature();
   const maxOutputTokens = getMaxTokens();
   const maxPdfBytes = getMaxPdfBytes();
+  const chunkPages = getChunkPages();
 
-  console.log(`[Gemini] Model: ${modelName} | Temp: ${temperature} | MaxTokens: ${maxOutputTokens}`);
+  console.log(`[Gemini] Model: ${modelName} | Temp: ${temperature} | MaxTokens: ${maxOutputTokens} | ChunkPages: ${chunkPages}`);
 
-  // Read and validate PDF size
   const pdfBuffer = fs.readFileSync(filePath);
-  if (pdfBuffer.length > maxPdfBytes) {
-    throw new Error(
-      `PDF too large for inline processing: ${Math.round(pdfBuffer.length / 1024 / 1024)}MB` +
-      ` (limit: ${Math.round(maxPdfBytes / 1024 / 1024)}MB — set GEMINI_MAX_PDF_MB to override)`,
-    );
-  }
+
+  // Determine page count to choose single-call vs chunked path
+  const pdfMeta = await PDFDocument.load(pdfBuffer);
+  const totalPages = pdfMeta.getPageCount();
+  console.log(`[Gemini] "${originalFilename}" — ${totalPages} page(s) detected`);
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: modelName,
-    generationConfig: {
-      temperature,
-      maxOutputTokens,
-    },
+    generationConfig: { temperature, maxOutputTokens },
   });
 
-  const base64Data = pdfBuffer.toString('base64');
-  const fullPrompt = `${EXTRACTION_PROMPT}\n\nFilename: ${originalFilename}`;
-
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        mimeType: 'application/pdf',
-        data: base64Data,
-      },
-    },
-    { text: fullPrompt },
-  ]);
-
-  const response = await result.response;
-  const text = response.text();
-
-  if (!text || !text.trim()) {
-    throw new Error('Gemini returned an empty response — check model availability and PDF content');
+  // ── Single-call path (PDF fits within chunk size) ────────────────────────
+  if (totalPages <= chunkPages) {
+    if (pdfBuffer.length > maxPdfBytes) {
+      throw new Error(
+        `PDF too large for inline processing: ${Math.round(pdfBuffer.length / 1024 / 1024)}MB` +
+        ` (limit: ${Math.round(maxPdfBytes / 1024 / 1024)}MB — set GEMINI_MAX_PDF_MB to override)`,
+      );
+    }
+    console.log(`[Gemini] Single-call mode (${totalPages} page(s) ≤ chunk size ${chunkPages})`);
+    return callGemini(model, pdfBuffer, originalFilename);
   }
 
-  return text;
+  // ── Chunked path (PDF exceeds chunk size) ───────────────────────────────
+  const numChunks = Math.ceil(totalPages / chunkPages);
+  console.log(`[Gemini] Chunked mode — ${totalPages} pages → ${numChunks} chunks of up to ${chunkPages} pages each`);
+
+  const chunks = await splitPdfIntoChunks(pdfBuffer, chunkPages, totalPages);
+  const csvFragments: string[] = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    const { buffer, startPage, endPage } = chunks[i];
+    console.log(`[Gemini] Chunk ${i + 1}/${chunks.length} — pages ${startPage}–${endPage}`);
+    const chunkNote =
+      `This chunk contains pages ${startPage}–${endPage} of a ${totalPages}-page PDF. ` +
+      `Set the page_number field to the ORIGINAL page numbers (${startPage} through ${endPage}).`;
+    const fragment = await callGemini(model, buffer, originalFilename, chunkNote);
+    csvFragments.push(fragment);
+  }
+
+  console.log(`[Gemini] Merging ${csvFragments.length} CSV fragments`);
+  return mergeChunkedCSV(csvFragments);
 }

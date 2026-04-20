@@ -1,17 +1,33 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDropzone } from 'react-dropzone'
-import { getJobs, uploadPDF } from '../lib/api'
+import toast from 'react-hot-toast'
+import { getJobs, uploadPDF, retryJob } from '../lib/api'
 import StatusBadge from '../components/StatusBadge'
 
 export default function Dashboard() {
   const [jobs, setJobs]           = useState([])
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
+  const [retrying, setRetrying]   = useState(null)
   const navigate = useNavigate()
 
   function loadJobs() {
     getJobs().then(setJobs).catch(console.error)
+  }
+
+  async function handleRetry(jobId) {
+    setRetrying(jobId)
+    try {
+      await retryJob(jobId)
+      toast.success('Job re-queued for processing')
+      loadJobs()
+      navigate(`/jobs/${jobId}`)
+    } catch (err) {
+      toast.error(err.message || 'Retry failed')
+    } finally {
+      setRetrying(null)
+    }
   }
 
   useEffect(() => {
@@ -186,12 +202,22 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => navigate(job.status === 'pending_review' ? `/jobs/${job.id}/review` : `/jobs/${job.id}/details`)}
-                          className="text-xs text-accent hover:text-accent/80 font-medium transition-colors"
-                        >
-                          {job.status === 'pending_review' ? 'Start Review →' : 'View Details →'}
-                        </button>
+                        {job.status === 'failed' ? (
+                          <button
+                            onClick={() => handleRetry(job.id)}
+                            disabled={retrying === job.id}
+                            className="text-xs text-red-400 hover:text-red-300 font-medium transition-colors disabled:opacity-50"
+                          >
+                            {retrying === job.id ? 'Retrying…' : 'Retry ↺'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => navigate(job.status === 'pending_review' ? `/jobs/${job.id}/review` : `/jobs/${job.id}/details`)}
+                            className="text-xs text-accent hover:text-accent/80 font-medium transition-colors"
+                          >
+                            {job.status === 'pending_review' ? 'Start Review →' : 'View Details →'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

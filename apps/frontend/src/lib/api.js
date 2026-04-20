@@ -56,6 +56,9 @@ export const uploadPDF = (file) => {
 
 export const getJobStatus = (jobId) => request(`/jobs/${jobId}/status`)
 
+export const retryJob = (jobId) =>
+  request(`/jobs/${jobId}/retry`, { method: 'POST' })
+
 // All extracted rows for a job (optional status filter: raw | approved | needs_review | reviewed)
 export const getJobRows = (jobId, status) =>
   request(`/jobs/${jobId}/rows${status ? `?status=${status}` : ''}`)

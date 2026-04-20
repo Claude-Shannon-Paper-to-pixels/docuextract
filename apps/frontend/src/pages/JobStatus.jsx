@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { getJobStatus } from '../lib/api'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
+import { getJobStatus, retryJob } from '../lib/api'
 import StatusBadge from '../components/StatusBadge'
 
 const STEPS = ['queued', 'extracting', 'enriching', 'complete']
@@ -18,6 +19,8 @@ const STEP_LABELS = {
 export default function JobStatus() {
   const { jobId } = useParams()
   const navigate  = useNavigate()
+  const queryClient = useQueryClient()
+  const [retrying, setRetrying] = useState(false)
 
   const { data: job } = useQuery({
     queryKey: ['job', jobId],
@@ -31,6 +34,18 @@ export default function JobStatus() {
     if (job.status === 'complete') navigate(`/jobs/${jobId}/details`)
     // 'pending_review' stays on this page — shows review prompt below
   }, [job?.status])
+
+  async function handleRetry() {
+    setRetrying(true)
+    try {
+      await retryJob(jobId)
+      toast.success('Job re-queued for processing')
+      queryClient.invalidateQueries({ queryKey: ['job', jobId] })
+    } catch (err) {
+      toast.error(err.message || 'Retry failed')
+      setRetrying(false)
+    }
+  }
 
   // Map pending_review to the last step visually
   const displayStatus = job?.status === 'pending_review' ? 'complete' : job?.status
@@ -124,12 +139,18 @@ export default function JobStatus() {
 
       {/* Error state */}
       {job?.status === 'failed' && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-5 space-y-2">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-5 space-y-3">
           <p className="text-red-400 text-sm font-medium">Processing failed</p>
           {job.errorMessage && (
             <p className="text-red-400/70 text-xs font-mono">{job.errorMessage}</p>
           )}
-          <p className="text-red-400/60 text-xs">Please try uploading the PDF again.</p>
+          <button
+            onClick={handleRetry}
+            disabled={retrying}
+            className="bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors"
+          >
+            {retrying ? 'Re-queuing…' : '↺ Retry extraction'}
+          </button>
         </div>
       )}
     </div>
