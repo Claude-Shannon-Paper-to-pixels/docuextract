@@ -67,8 +67,22 @@ model User {
   createdAt    DateTime @default(now())
 
   reviewedTransactions Transaction[] @relation("ReviewedBy")
+  auditLogs            AuditLog[]
 
   @@map("users")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  userEmail String
+  action    String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
 }
 
 model Client {

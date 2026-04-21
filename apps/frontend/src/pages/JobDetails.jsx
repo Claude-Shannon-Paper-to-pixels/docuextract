@@ -68,9 +68,13 @@ export default function JobDetails() {
           r.vendorNameMatched,
           r.vendorCode,
           r.invoiceNumber,
+          r.cnNumber,
           r.glCode,
           r.glLabel,
           r.outletCode,
+          r.companyName,
+          r.originalFilename,
+          r.extractionRemarks,
         ].some(v => v?.toLowerCase().includes(search.toLowerCase()))
       )
     : rows
@@ -96,12 +100,6 @@ export default function JobDetails() {
     reviewed:    allRows.filter(r => r.status === 'reviewed').length,
     needsReview: allRows.filter(r => r.status === 'needs_review').length,
     raw:         allRows.filter(r => r.status === 'raw').length,
-  }
-
-  function formatAmount(row) {
-    if (row.debit != null)  return { label: `RM ${Number(row.debit).toFixed(2)}`,  type: 'debit' }
-    if (row.credit != null) return { label: `RM ${Number(row.credit).toFixed(2)}`, type: 'credit' }
-    return { label: '—', type: null }
   }
 
   return (
@@ -248,153 +246,162 @@ export default function JobDetails() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-surface-border bg-surface-raised/40">
-                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Page</th>
-                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Outlet</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Company</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Outlet Code</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Doc Category</th>
                   <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Date</th>
-                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Doc #</th>
-                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Type</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Invoice #</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">CN #</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Doc Type</th>
                   <th className="text-left text-white/40 font-medium px-4 py-3 min-w-[200px]">Description</th>
-                  <th className="text-left text-white/40 font-medium px-4 py-3 min-w-[160px]">Vendor</th>
                   <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Vendor Code</th>
-                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">GL Code</th>
-                  <th className="text-left text-white/40 font-medium px-4 py-3 min-w-[140px]">GL Label</th>
-                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Match Method</th>
-                  <th className="text-right text-white/40 font-medium px-4 py-3 whitespace-nowrap">Amount</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 min-w-[140px]">Vendor Name</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Account Code</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 min-w-[140px]">Account Desc.</th>
+                  <th className="text-right text-white/40 font-medium px-4 py-3 whitespace-nowrap">Debit</th>
+                  <th className="text-right text-white/40 font-medium px-4 py-3 whitespace-nowrap">Credit</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Page</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 min-w-[160px]">File Name</th>
+                  <th className="text-left text-white/40 font-medium px-4 py-3 min-w-[160px]">Extraction Remarks</th>
                   <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Status</th>
                   <th className="text-left text-white/40 font-medium px-4 py-3 whitespace-nowrap">Review Reason</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-border">
-                {filtered.map(row => {
-                  const amt = formatAmount(row)
-                  return (
-                    <tr key={row.id} className="hover:bg-surface-raised/20 transition-colors">
+                {filtered.map(row => (
+                  <tr key={row.id} className="hover:bg-surface-raised/20 transition-colors">
 
-                      {/* Page */}
-                      <td className="px-4 py-3 font-mono text-white/30">
-                        {row.pageNumber ?? '—'}
-                      </td>
+                    {/* Company Name */}
+                    <td className="px-4 py-3 text-white/50 whitespace-nowrap">
+                      {row.companyName ?? '—'}
+                    </td>
 
-                      {/* Outlet Code */}
-                      <td className="px-4 py-3 font-mono text-white/50 whitespace-nowrap">
-                        {row.outletCode ? (
-                          <span className="bg-surface-raised px-1.5 py-0.5 rounded text-white/50">
-                            {row.outletCode}
-                          </span>
-                        ) : '—'}
-                      </td>
+                    {/* Outlet Code */}
+                    <td className="px-4 py-3 font-mono text-white/50 whitespace-nowrap">
+                      {row.outletCode
+                        ? <span className="bg-surface-raised px-1.5 py-0.5 rounded">{row.outletCode}</span>
+                        : '—'}
+                    </td>
 
-                      {/* Date */}
-                      <td className="px-4 py-3 text-white/50 whitespace-nowrap">
-                        {row.date
-                          ? new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                          : '—'}
-                      </td>
+                    {/* Document Category */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {row.documentCategory
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-surface-raised text-white/50">{row.documentCategory}</span>
+                        : '—'}
+                    </td>
 
-                      {/* Doc # (invoice or CN) */}
-                      <td className="px-4 py-3 font-mono text-white/50 whitespace-nowrap">
-                        {row.invoiceNumber ?? row.cnNumber ?? '—'}
-                      </td>
+                    {/* Date */}
+                    <td className="px-4 py-3 text-white/50 whitespace-nowrap">
+                      {row.date
+                        ? new Date(row.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : '—'}
+                    </td>
 
-                      {/* Document type / category */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {row.documentType ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-surface-raised text-white/50">
-                            {row.documentType}
-                          </span>
-                        ) : '—'}
-                      </td>
+                    {/* Invoice Number */}
+                    <td className="px-4 py-3 font-mono text-white/50 whitespace-nowrap">
+                      {row.invoiceNumber ?? '—'}
+                    </td>
 
-                      {/* Description + category */}
-                      <td className="px-4 py-3 text-white/70 max-w-xs">
-                        <p className="truncate" title={row.documentDescription}>{row.documentDescription ?? '—'}</p>
-                        {row.documentCategory && (
-                          <p className="text-white/25 mt-0.5 text-[10px]">{row.documentCategory}</p>
-                        )}
-                      </td>
+                    {/* CN Number */}
+                    <td className="px-4 py-3 font-mono text-white/50 whitespace-nowrap">
+                      {row.cnNumber ?? '—'}
+                    </td>
 
-                      {/* Vendor (matched + raw) */}
-                      <td className="px-4 py-3 max-w-[160px]">
-                        <p className="text-white/70 truncate" title={row.vendorNameMatched ?? row.vendorNameRaw}>
-                          {row.vendorNameMatched ?? row.vendorNameRaw ?? '—'}
+                    {/* Document Type */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {row.documentType
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-surface-raised text-white/50">{row.documentType}</span>
+                        : '—'}
+                    </td>
+
+                    {/* Document Description */}
+                    <td className="px-4 py-3 text-white/70 max-w-xs">
+                      <p className="truncate" title={row.documentDescription}>{row.documentDescription ?? '—'}</p>
+                    </td>
+
+                    {/* Vendor Code */}
+                    <td className="px-4 py-3 font-mono whitespace-nowrap">
+                      {row.vendorCode
+                        ? <span className="text-white/60">{row.vendorCode}</span>
+                        : <span className="text-amber-400/60">—</span>}
+                    </td>
+
+                    {/* Vendor Name */}
+                    <td className="px-4 py-3 max-w-[160px]">
+                      <p className="text-white/70 truncate" title={row.vendorNameMatched ?? row.vendorNameRaw}>
+                        {row.vendorNameMatched ?? row.vendorNameRaw ?? '—'}
+                      </p>
+                      {row.vendorNameMatched && row.vendorNameRaw !== row.vendorNameMatched && (
+                        <p className="text-white/25 truncate mt-0.5 text-[10px]" title={row.vendorNameRaw}>
+                          raw: {row.vendorNameRaw}
                         </p>
-                        {row.vendorNameMatched && row.vendorNameRaw !== row.vendorNameMatched && (
-                          <p className="text-white/25 truncate mt-0.5 text-[10px]" title={row.vendorNameRaw}>
-                            {row.vendorNameRaw}
-                          </p>
-                        )}
-                      </td>
+                      )}
+                    </td>
 
-                      {/* Vendor Code */}
-                      <td className="px-4 py-3 font-mono whitespace-nowrap">
-                        {row.vendorCode
-                          ? <span className="text-white/60">{row.vendorCode}</span>
-                          : <span className="text-amber-400/60">—</span>}
-                      </td>
+                    {/* Account Code (GL Code) */}
+                    <td className="px-4 py-3 font-mono whitespace-nowrap">
+                      {row.glCode
+                        ? <span className="text-white/60">{row.glCode}</span>
+                        : <span className="text-amber-400/60">—</span>}
+                    </td>
 
-                      {/* GL Code */}
-                      <td className="px-4 py-3 font-mono whitespace-nowrap">
-                        {row.glCode
-                          ? <span className="text-white/60">{row.glCode}</span>
-                          : <span className="text-amber-400/60">—</span>}
-                      </td>
+                    {/* Account Description (GL Label) */}
+                    <td className="px-4 py-3 text-white/40 max-w-[160px]">
+                      <p className="truncate text-[11px]" title={row.glLabel}>{row.glLabel ?? '—'}</p>
+                    </td>
 
-                      {/* GL Label */}
-                      <td className="px-4 py-3 text-white/40 max-w-[160px]">
-                        <p className="truncate text-[11px]" title={row.glLabel}>
-                          {row.glLabel ?? '—'}
-                        </p>
-                      </td>
+                    {/* Debit */}
+                    <td className="px-4 py-3 font-mono text-right whitespace-nowrap text-red-400">
+                      {row.debit != null ? `RM ${Number(row.debit).toFixed(2)}` : '—'}
+                    </td>
 
-                      {/* GL Match Method */}
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {row.glMatchMethod ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono bg-surface-raised text-white/35">
-                            {row.glMatchMethod}
+                    {/* Credit */}
+                    <td className="px-4 py-3 font-mono text-right whitespace-nowrap text-green-400">
+                      {row.credit != null ? `RM ${Number(row.credit).toFixed(2)}` : '—'}
+                    </td>
+
+                    {/* Page Number */}
+                    <td className="px-4 py-3 font-mono text-white/30">
+                      {row.pageNumber ?? '—'}
+                    </td>
+
+                    {/* File Name */}
+                    <td className="px-4 py-3 font-mono text-white/30 max-w-[160px]">
+                      <p className="truncate text-[10px]" title={row.originalFilename}>{row.originalFilename ?? '—'}</p>
+                    </td>
+
+                    {/* Extraction Remarks */}
+                    <td className="px-4 py-3 text-amber-400/70 max-w-[160px]">
+                      <p className="truncate text-[10px]" title={row.extractionRemarks}>{row.extractionRemarks ?? '—'}</p>
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap ${ROW_STATUS_STYLES[row.status] ?? 'bg-white/5 text-white/30 border border-white/10'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ROW_STATUS_DOT[row.status] ?? 'bg-white/30'}`} />
+                        {ROW_STATUS_LABELS[row.status] ?? row.status}
+                      </span>
+                    </td>
+
+                    {/* Review Reason */}
+                    <td className="px-4 py-3">
+                      {row.reviewReason ? (() => {
+                        const meta = REVIEW_REASON_META[row.reviewReason]
+                        return meta ? (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${meta.bg} ${meta.color}`}>
+                            <span className={`w-1 h-1 rounded-full flex-shrink-0 ${meta.dot}`} />
+                            {meta.label}
                           </span>
-                        ) : '—'}
-                      </td>
+                        ) : (
+                          <span className="text-white/30 text-[10px] font-mono">{row.reviewReason}</span>
+                        )
+                      })() : (
+                        <span className="text-white/20">—</span>
+                      )}
+                    </td>
 
-                      {/* Amount */}
-                      <td className={`px-4 py-3 font-mono text-right whitespace-nowrap ${
-                        amt.type === 'debit'  ? 'text-red-400' :
-                        amt.type === 'credit' ? 'text-green-400' :
-                        'text-white/30'
-                      }`}>
-                        {amt.label}
-                        {amt.type && (
-                          <span className="ml-1 text-white/20">{amt.type === 'debit' ? 'Dr' : 'Cr'}</span>
-                        )}
-                      </td>
-
-                      {/* Status — enhanced badge */}
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap ${ROW_STATUS_STYLES[row.status] ?? 'bg-white/5 text-white/30 border border-white/10'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ROW_STATUS_DOT[row.status] ?? 'bg-white/30'}`} />
-                          {ROW_STATUS_LABELS[row.status] ?? row.status}
-                        </span>
-                      </td>
-
-                      {/* Review Reason */}
-                      <td className="px-4 py-3">
-                        {row.reviewReason ? (() => {
-                          const meta = REVIEW_REASON_META[row.reviewReason]
-                          return meta ? (
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${meta.bg} ${meta.color}`}>
-                              <span className={`w-1 h-1 rounded-full flex-shrink-0 ${meta.dot}`} />
-                              {meta.label}
-                            </span>
-                          ) : (
-                            <span className="text-white/30 text-[10px] font-mono">{row.reviewReason}</span>
-                          )
-                        })() : (
-                          <span className="text-white/20">—</span>
-                        )}
-                      </td>
-
-                    </tr>
-                  )
-                })}
+                  </tr>
+                ))}
               </tbody>
             </table>
 

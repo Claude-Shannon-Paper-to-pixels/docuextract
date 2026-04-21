@@ -116,8 +116,12 @@ const start = async () => {
       status: { type: 'string', enum: ['raw', 'approved', 'needs_review', 'reviewed'] },
       confidence: { type: ['number', 'null'] },
       extractionRemarks: { type: ['string', 'null'] },
+      reviewReason: { type: ['string', 'null'] },
+      reviewNotes: { type: ['string', 'null'] },
       reviewedAt: { type: ['string', 'null'] },
-      createdAt: { type: 'string', format: 'date-time' },
+      // Joined from Job / Client — populated by rows endpoints
+      companyName: { type: ['string', 'null'] },
+      originalFilename: { type: ['string', 'null'] },
     },
   });
 

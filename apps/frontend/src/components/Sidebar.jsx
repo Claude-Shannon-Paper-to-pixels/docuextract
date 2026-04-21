@@ -20,9 +20,9 @@ export default function Sidebar() {
     <aside className="w-56 bg-surface-card border-r border-surface-border flex flex-col">
       {/* Logo */}
       <div className="p-5 border-b border-surface-border">
-        <span className="font-mono text-accent font-medium tracking-tight">
+        <NavLink to="/dashboard" className="font-mono text-accent font-medium tracking-tight hover:text-accent/80 transition-colors">
           DocuExtract
-        </span>
+        </NavLink>
       </div>
 
       {/* Client list */}
@@ -52,6 +52,25 @@ export default function Sidebar() {
         {clients.length === 0 && (
           <p className="text-xs text-white/20 px-2 py-1">No clients found</p>
         )}
+      </nav>
+
+      {/* Audit Log */}
+      <nav className="p-3 border-t border-surface-border">
+        <NavLink
+          to="/audit-log"
+          className={({ isActive }) =>
+            `flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+              isActive
+                ? 'bg-accent-muted text-accent'
+                : 'text-white/60 hover:bg-surface-raised hover:text-white'
+            }`
+          }
+        >
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+          </svg>
+          <span>Audit Log</span>
+        </NavLink>
       </nav>
 
       {/* Logout */}

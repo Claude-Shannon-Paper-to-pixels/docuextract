@@ -159,9 +159,21 @@ export async function jobsRoutes(fastify: FastifyInstance) {
     const rows = await prisma.transaction.findMany({
       where: whereClause,
       orderBy: [{ pageNumber: 'asc' }, { date: 'asc' }],
+      include: {
+        job: {
+          select: {
+            originalFilename: true,
+            client: { select: { name: true } },
+          },
+        },
+      },
     });
 
-    return rows;
+    return rows.map(({ job, ...r }) => ({
+      ...r,
+      companyName: job.client.name,
+      originalFilename: job.originalFilename,
+    }));
   });
 
 
@@ -232,6 +244,63 @@ export async function jobsRoutes(fastify: FastifyInstance) {
       originalFilename: job.originalFilename,
     });
 
+    // Audit log
+    const jwtUserForAudit = request.user as JwtPayload;
+    await prisma.auditLog.create({
+      data: {
+        userId:    jwtUserForAudit.id,
+        userEmail: jwtUserForAudit.email,
+        action:    'retry_job',
+        detail:    job.originalFilename,
+      },
+    });
+
     return reply.status(200).send({ jobId: id, status: 'queued', message: 'Job re-queued for extraction' });
+  });
+
+  // GET /audit-logs — recent activity log (admin only)
+  fastify.get('/audit-logs', {
+    preHandler: authenticate,
+    schema: {
+      tags: ['Jobs'],
+      summary: 'List recent audit log entries (admin only)',
+      security: [{ bearerAuth: [] }],
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id:        { type: 'string' },
+              userEmail: { type: 'string' },
+              action:    { type: 'string' },
+              detail:    { type: ['string', 'null'] },
+              createdAt: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+        401: { $ref: 'ErrorResponse#' },
+        403: { $ref: 'ErrorResponse#' },
+      },
+    },
+  }, async (request, reply) => {
+    const jwtUser = request.user as JwtPayload;
+    if (jwtUser.role !== 'admin') {
+      return reply.status(403).send({ error: 'Forbidden — admin only' });
+    }
+
+    const logs = await prisma.auditLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+      select: {
+        id: true,
+        userEmail: true,
+        action: true,
+        detail: true,
+        createdAt: true,
+      },
+    });
+
+    return logs;
   });
 }

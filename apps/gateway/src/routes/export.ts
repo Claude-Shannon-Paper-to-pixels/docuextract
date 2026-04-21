@@ -3,6 +3,12 @@ import { authenticate } from '../middleware/auth.js';
 import { prisma } from '@docuextract/db';
 import ExcelJS from 'exceljs';
 
+interface JwtPayload {
+  id: string;
+  email: string;
+  role: string;
+}
+
 export async function exportRoutes(fastify: FastifyInstance) {
   fastify.get('/jobs/:id/export', {
     preHandler: authenticate,
@@ -78,6 +84,17 @@ export async function exportRoutes(fastify: FastifyInstance) {
 
     const buffer = await workbook.xlsx.writeBuffer();
     const filename = `export_${job.outletCode}_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+    // Audit log
+    const jwtUser = request.user as JwtPayload;
+    await prisma.auditLog.create({
+      data: {
+        userId:    jwtUser.id,
+        userEmail: jwtUser.email,
+        action:    'export_job',
+        detail:    job.originalFilename,
+      },
+    });
 
     reply.header('Content-Disposition', `attachment; filename="${filename}"`);
     reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

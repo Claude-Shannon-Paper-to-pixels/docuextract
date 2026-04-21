@@ -9,9 +9,11 @@ function headers() {
 }
 
 async function request(path, options = {}) {
+  const merged = { ...headers(), ...options.headers }
+  if (!options.body) delete merged['Content-Type']
   const res = await fetch(`${BASE}${path}`, {
     ...options,
-    headers: { ...headers(), ...options.headers },
+    headers: merged,
   })
   if (res.status === 401) {
     localStorage.removeItem('token')
@@ -93,3 +95,6 @@ export const downloadExport = (jobId) =>
     if (!r.ok) throw new Error('Export failed')
     return r.blob()
   })
+
+// Audit log
+export const getAuditLogs = () => request('/audit-logs')

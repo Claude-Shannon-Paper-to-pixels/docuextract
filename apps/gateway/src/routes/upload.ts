@@ -86,6 +86,16 @@ export async function uploadRoutes(fastify: FastifyInstance) {
       originalFilename: data.filename,
     });
 
+    // Audit log
+    await prisma.auditLog.create({
+      data: {
+        userId:    jwtUser.id,
+        userEmail: jwtUser.email,
+        action:    'upload_document',
+        detail:    data.filename,
+      },
+    });
+
     return reply.status(201).send({ jobId: job.id, outletCode, status: 'queued' });
   });
 }

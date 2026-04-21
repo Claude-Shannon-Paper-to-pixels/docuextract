@@ -1,34 +1,29 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { getPendingRows, getReviewSummary, approveRow, bulkApproveRows } from '../lib/api'
+import { getPendingRows, getReviewSummary, approveRow } from '../lib/api'
 
-// ── Review reason metadata ─────────────────────────────────────────────────
 const REASON_META = {
   vendor_unmatched: {
     label: 'Vendor Unmatched',
-    description: 'Could not find a matching vendor in the vendor master.',
     color: 'text-amber-400',
     bg: 'bg-amber-500/10 border-amber-500/30',
     dot: 'bg-amber-400',
   },
   gl_unmatched: {
     label: 'GL Unmatched',
-    description: 'No GL account rule matched this description or vendor.',
     color: 'text-orange-400',
     bg: 'bg-orange-500/10 border-orange-500/30',
     dot: 'bg-orange-400',
   },
   low_confidence: {
     label: 'Low Confidence',
-    description: 'Gemini extraction confidence was below the threshold — verify all fields.',
     color: 'text-red-400',
     bg: 'bg-red-500/10 border-red-500/30',
     dot: 'bg-red-400',
   },
   row_count_mismatch: {
-    label: 'Row Count Mismatch',
-    description: 'Fewer rows were extracted than expected — PDF may be faded or low quality.',
+    label: 'Row Mismatch',
     color: 'text-purple-400',
     bg: 'bg-purple-500/10 border-purple-500/30',
     dot: 'bg-purple-400',
@@ -43,32 +38,52 @@ const REASON_SUMMARY_LABELS = {
   unknown:            'Other',
 }
 
+function EditableCell({ value, onChange, highlight, placeholder }) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={`w-full bg-transparent border rounded px-2 py-1 text-xs font-mono text-white placeholder-white/20 focus:outline-none focus:border-accent transition-colors min-w-[110px] ${
+        highlight
+          ? 'border-amber-500/60 bg-amber-500/8'
+          : 'border-surface-border hover:border-white/20 focus:border-accent'
+      }`}
+    />
+  )
+}
+
 export default function Review() {
   const { jobId } = useParams()
   const navigate  = useNavigate()
 
-  const [rows, setRows]             = useState([])
-  const [current, setCurrent]       = useState(0)
-  const [loading, setLoading]       = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [summary, setSummary]       = useState(null)
+  const [rows, setRows]         = useState([])
+  const [edits, setEdits]       = useState({})
+  const [approved, setApproved] = useState(new Set())
+  const [saving, setSaving]     = useState(new Set())
+  const [loading, setLoading]   = useState(true)
+  const [summary, setSummary]   = useState(null)
 
-  // Editable fields
-  const [vendorCode, setVendorCode]               = useState('')
-  const [vendorNameMatched, setVendorNameMatched] = useState('')
-  const [glCode, setGlCode]                       = useState('')
-  const [glLabel, setGlLabel]                     = useState('')
-
-  const row   = rows[current]
-  const total = rows.length
-
-  const reason       = row?.reviewReason
-  const reasonMeta   = REASON_META[reason] ?? null
-
-  // Determine how many other rows share the same raw vendor name
-  const sameVendorRows = rows.filter(
-    (r, i) => i !== current && r.vendorNameRaw === row?.vendorNameRaw,
-  )
+  function initialEdit(r) {
+    return {
+      vendorCode:          r.vendorCode          ?? '',
+      vendorNameMatched:   r.vendorNameMatched   ?? '',
+      glCode:              r.glCode              ?? '',
+      glLabel:             r.glLabel             ?? '',
+      date:                r.date ? r.date.slice(0, 10) : '',
+      documentDescription: r.documentDescription ?? '',
+      documentType:        r.documentType        ?? '',
+      documentCategory:    r.documentCategory    ?? '',
+      invoiceNumber:       r.invoiceNumber       ?? '',
+      cnNumber:            r.cnNumber            ?? '',
+      debit:               r.debit  != null ? String(r.debit)  : '',
+      credit:              r.credit != null ? String(r.credit) : '',
+      outletCode:          r.outletCode          ?? '',
+      pageNumber:          r.pageNumber != null  ? String(r.pageNumber) : '',
+      extractionRemarks:   r.extractionRemarks   ?? '',
+    }
+  }
 
   useEffect(() => {
     Promise.all([getPendingRows(jobId), getReviewSummary(jobId)])
@@ -76,88 +91,88 @@ export default function Review() {
         const pending = pendingData.rows ?? []
         setRows(pending)
         setSummary(summaryData)
-        if (pending[0]) prefill(pending[0])
+        const initial = {}
+        for (const r of pending) {
+          initial[r.id] = initialEdit(r)
+        }
+        setEdits(initial)
       })
       .catch((err) => toast.error(err.message || 'Failed to load review data'))
       .finally(() => setLoading(false))
   }, [jobId])
 
-  function prefill(r) {
-    setVendorCode(r.vendorCode ?? '')
-    setVendorNameMatched(r.vendorNameMatched ?? '')
-    setGlCode(r.glCode ?? '')
-    setGlLabel(r.glLabel ?? '')
+  function getEdit(rowId) {
+    return edits[rowId] ?? { vendorCode: '', vendorNameMatched: '', glCode: '', glLabel: '', date: '', documentDescription: '', documentType: '', documentCategory: '', invoiceNumber: '', cnNumber: '', debit: '', credit: '', outletCode: '', pageNumber: '', extractionRemarks: '' }
   }
 
-  // All rows require vendorCode, vendorName, glCode, and glLabel
-  function isValid() {
-    if (!vendorCode.trim() || !vendorNameMatched.trim()) return false
-    if (!glCode.trim() || !glLabel.trim()) return false
-    return true
+  function updateEdit(rowId, field, value) {
+    setEdits((prev) => ({
+      ...prev,
+      [rowId]: { ...getEdit(rowId), ...prev[rowId], [field]: value },
+    }))
   }
 
-  async function handleApprove() {
-    if (!isValid()) return
-    setSubmitting(true)
+  function isRowValid(rowId) {
+    const e = getEdit(rowId)
+    return (
+      e.vendorCode.trim() &&
+      e.vendorNameMatched.trim() &&
+      e.glCode.trim() &&
+      e.glLabel.trim()
+    )
+  }
+
+  async function handleApproveRow(rowId) {
+    if (!isRowValid(rowId)) return
+    setSaving((prev) => new Set(prev).add(rowId))
     try {
-      const payload = { vendorCode, vendorNameMatched, glCode, glLabel }
-      await approveRow(jobId, row.id, payload)
+      await approveRow(jobId, rowId, getEdit(rowId))
+      setApproved((prev) => new Set(prev).add(rowId))
       toast.success('Row approved')
-      advance()
     } catch (err) {
-      toast.error(err.message || 'Failed to save — check all required fields')
+      toast.error(err.message || 'Failed to save row')
     } finally {
-      setSubmitting(false)
+      setSaving((prev) => { const n = new Set(prev); n.delete(rowId); return n })
     }
   }
 
-  async function handleBulkApprove() {
-    if (!isValid() || sameVendorRows.length === 0) return
-    setSubmitting(true)
-    try {
-      const payload = {
-        vendorNameRaw: row.vendorNameRaw,
-        vendorCode,
-        vendorNameMatched,
-        glCode,
-        glLabel,
-      }
-      const { updatedCount } = await bulkApproveRows(jobId, payload)
-      toast.success(`Bulk approved ${updatedCount} rows for "${row.vendorNameRaw}"`)
-      // Reload pending rows after bulk
-      setLoading(true)
-      const data = await getPendingRows(jobId)
-      const pending = data.rows ?? []
-      setRows(pending)
-      const summaryData = await getReviewSummary(jobId)
-      setSummary(summaryData)
-      if (pending.length === 0) {
-        navigate(`/jobs/${jobId}/export`)
-      } else {
-        setCurrent(0)
-        prefill(pending[0])
-      }
-    } catch (err) {
-      toast.error(err.message || 'Bulk approve failed')
-    } finally {
-      setSubmitting(false)
-      setLoading(false)
+  async function handleApproveAll() {
+    const pending = rows.filter((r) => !approved.has(r.id) && isRowValid(r.id))
+    if (pending.length === 0) return
+
+    // Mark all as saving
+    setSaving(new Set(pending.map((r) => r.id)))
+
+    const results = await Promise.allSettled(
+      pending.map((r) => approveRow(jobId, r.id, getEdit(r.id)).then(() => r.id))
+    )
+
+    const succeeded = new Set()
+    let failCount = 0
+    for (const result of results) {
+      if (result.status === 'fulfilled') succeeded.add(result.value)
+      else failCount++
     }
+
+    setApproved((prev) => new Set([...prev, ...succeeded]))
+    setSaving(new Set())
+
+    if (failCount > 0) toast.error(`${failCount} row(s) failed to save`)
+    else toast.success(`All ${succeeded.size} rows approved!`)
   }
 
-  function handleSkip() {
-    advance()
-  }
+  const approvedCount      = approved.size
+  const pendingCount       = rows.length - approvedCount
+  const validPendingCount  = rows.filter((r) => !approved.has(r.id) && isRowValid(r.id)).length
 
-  function advance() {
-    const next = current + 1
-    if (next >= total) {
-      navigate(`/jobs/${jobId}/export`)
-    } else {
-      setCurrent(next)
-      prefill(rows[next])
+  // Auto-navigate when everything is approved
+  useEffect(() => {
+    if (rows.length > 0 && approvedCount === rows.length) {
+      toast.success('All rows reviewed! Redirecting to export…')
+      const t = setTimeout(() => navigate(`/jobs/${jobId}/export`), 1200)
+      return () => clearTimeout(t)
     }
-  }
+  }, [approvedCount, rows.length, jobId, navigate])
 
   if (loading) {
     return (
@@ -170,7 +185,7 @@ export default function Review() {
     )
   }
 
-  if (total === 0) {
+  if (rows.length === 0) {
     return (
       <div className="max-w-md space-y-4">
         <p className="text-white/60 text-sm">No rows need review for this job.</p>
@@ -184,47 +199,46 @@ export default function Review() {
     )
   }
 
-  if (current >= total) return null
-
-  const amountStr = row.debit != null
-    ? `RM ${Number(row.debit).toFixed(2)} Dr`
-    : row.credit != null
-      ? `RM ${Number(row.credit).toFixed(2)} Cr`
-      : '—'
-
   return (
-    <div className="max-w-5xl flex flex-col gap-5">
+    <div className="w-full flex flex-col gap-5">
 
-      {/* Progress + summary bar */}
-      <div className="flex items-center gap-4">
+      {/* Top bar */}
+      <div className="flex items-center gap-3 flex-wrap">
         <button
           onClick={() => navigate(`/jobs/${jobId}/details`)}
           className="text-xs text-white/30 hover:text-white/60 transition-colors flex items-center gap-1 flex-shrink-0"
         >
           ← Back
         </button>
-        <p className="text-sm text-white/40 whitespace-nowrap">
-          Reviewing{' '}
-          <span className="text-white font-mono">{current + 1}</span> of{' '}
-          <span className="text-white font-mono">{total}</span>
-        </p>
-        <div className="flex-1 h-1 bg-surface-raised rounded-full overflow-hidden">
-          <div
-            className="h-full bg-accent rounded-full transition-all duration-300"
-            style={{ width: `${((current) / total) * 100}%` }}
-          />
+
+        <h1 className="text-lg font-medium text-white">Review Queue</h1>
+
+        {/* Progress bar */}
+        <div className="flex items-center gap-2">
+          <div className="w-28 h-1.5 bg-surface-raised rounded-full overflow-hidden">
+            <div
+              className="h-full bg-accent rounded-full transition-all duration-300"
+              style={{ width: `${rows.length ? (approvedCount / rows.length) * 100 : 0}%` }}
+            />
+          </div>
+          <span className="text-xs text-white/40 whitespace-nowrap">
+            <span className="text-white font-mono">{approvedCount}</span>
+            <span> / </span>
+            <span className="font-mono">{rows.length}</span>
+            <span className="ml-1">approved</span>
+          </span>
         </div>
 
-        {/* Summary pills */}
+        {/* Reason summary pills */}
         {summary && (
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {Object.entries(summary.byReason)
               .filter(([, count]) => count > 0)
               .map(([key, count]) => (
                 <span
                   key={key}
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                    REASON_META[key]?.bg ?? 'bg-white/5 border-white/10 text-white/40'
+                    REASON_META[key]?.bg ?? 'bg-white/5 border-white/10'
                   } ${REASON_META[key]?.color ?? 'text-white/40'}`}
                 >
                   <span className={`w-1 h-1 rounded-full ${REASON_META[key]?.dot ?? 'bg-white/30'}`} />
@@ -233,182 +247,251 @@ export default function Review() {
               ))}
           </div>
         )}
-      </div>
 
-      {/* Review reason banner */}
-      {reasonMeta && (
-        <div className={`flex items-start gap-3 px-4 py-3 rounded-lg border ${reasonMeta.bg}`}>
-          <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1 ${reasonMeta.dot}`} />
-          <div>
-            <p className={`text-xs font-semibold ${reasonMeta.color}`}>{reasonMeta.label}</p>
-            <p className="text-xs text-white/50 mt-0.5">{reasonMeta.description}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Split view */}
-      <div className="flex gap-6">
-
-        {/* Left: transaction context */}
-        <div className="flex-1 bg-surface-card border border-surface-border rounded-xl p-6 space-y-4">
-          <p className="text-xs text-white/40 uppercase tracking-wider">Transaction details</p>
-
-          <div className="space-y-3">
-            {[
-              { label: 'Date',         value: row.date ? new Date(row.date).toLocaleDateString() : '—' },
-              { label: 'Description',  value: row.documentDescription },
-              { label: 'Vendor (raw)', value: row.vendorNameRaw },
-              { label: 'Amount',       value: amountStr },
-              { label: 'Category',     value: row.documentCategory },
-              { label: 'Invoice #',    value: row.invoiceNumber ?? row.cnNumber ?? '—' },
-              { label: 'Page',         value: row.pageNumber ?? '—' },
-            ].map(({ label, value }) => (
-              <div key={label}>
-                <p className="text-xs text-white/30 mb-0.5">{label}</p>
-                <p className="text-sm text-white font-mono break-all">{value ?? '—'}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Confidence indicator */}
-          {row.confidence != null && (
-            <div className="pt-2 border-t border-surface-border">
-              <p className="text-xs text-white/30 mb-1">Extraction confidence</p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-1.5 bg-surface-raised rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      row.confidence < 0.6 ? 'bg-red-400' :
-                      row.confidence < 0.8 ? 'bg-amber-400' :
-                      'bg-green-400'
-                    }`}
-                    style={{ width: `${Math.round(row.confidence * 100)}%` }}
-                  />
-                </div>
-                <span className={`text-xs font-mono ${
-                  row.confidence < 0.6 ? 'text-red-400' :
-                  row.confidence < 0.8 ? 'text-amber-400' :
-                  'text-green-400'
-                }`}>
-                  {Math.round(row.confidence * 100)}%
-                </span>
-              </div>
-            </div>
-          )}
-
-          {row.extractionRemarks && (
-            <div className="pt-2 border-t border-surface-border">
-              <p className="text-xs text-white/30 mb-1">Extraction remarks</p>
-              <p className="text-xs text-amber-400/80 font-mono">{row.extractionRemarks}</p>
-            </div>
-          )}
-
-          {/* Bulk approve hint */}
-          {sameVendorRows.length > 0 && (
-            <div className="pt-2 border-t border-surface-border">
-              <p className="text-xs text-white/30">
-                <span className="text-accent font-medium">{sameVendorRows.length}</span> other row{sameVendorRows.length > 1 ? 's' : ''} share this vendor name.
-                Use <span className="text-accent">Bulk Approve</span> to apply the same codes to all of them at once.
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Right: correction form */}
-        <div className="w-80 flex flex-col gap-4">
-          <div className="bg-surface-card border border-surface-border rounded-xl p-5 space-y-4">
-            <p className="text-xs text-white/40 uppercase tracking-wider">Assign codes</p>
-
-            {/* Vendor code */}
-            <div>
-              <label className="block text-xs text-white/40 mb-1.5">
-                Vendor code
-                {!row.vendorCode && <span className="ml-2 text-amber-400">· missing</span>}
-              </label>
-              <input
-                type="text"
-                value={vendorCode}
-                onChange={(e) => setVendorCode(e.target.value)}
-                placeholder="e.g. 4000/I01"
-                className={`w-full bg-surface-raised border rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent transition-colors font-mono ${
-                  !vendorCode.trim() ? 'border-amber-500/50' : 'border-surface-border'
-                }`}
-              />
-            </div>
-
-            {/* Vendor name */}
-            <div>
-              <label className="block text-xs text-white/40 mb-1.5">Vendor name (matched)</label>
-              <input
-                type="text"
-                value={vendorNameMatched}
-                onChange={(e) => setVendorNameMatched(e.target.value)}
-                placeholder="e.g. ILT OPTICS (M) SDN BHD"
-                className={`w-full bg-surface-raised border rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent transition-colors font-mono ${
-                  !vendorNameMatched.trim() ? 'border-amber-500/50' : 'border-surface-border'
-                }`}
-              />
-            </div>
-
-            {/* GL fields — required for ALL rows including PAYMENT */}
-            <div>
-              <label className="block text-xs text-white/40 mb-1.5">
-                GL account code
-                {!row.glCode && <span className="ml-2 text-amber-400">· missing</span>}
-              </label>
-              <input
-                type="text"
-                value={glCode}
-                onChange={(e) => setGlCode(e.target.value)}
-                placeholder="e.g. 6011/000"
-                className={`w-full bg-surface-raised border rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent transition-colors font-mono ${
-                  !glCode.trim() ? 'border-amber-500/50' : 'border-surface-border'
-                }`}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-white/40 mb-1.5">GL account description</label>
-              <input
-                type="text"
-                value={glLabel}
-                onChange={(e) => setGlLabel(e.target.value)}
-                placeholder="e.g. Purchases - Other Supplies"
-                className={`w-full bg-surface-raised border rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent transition-colors font-mono ${
-                  !glLabel.trim() ? 'border-amber-500/50' : 'border-surface-border'
-                }`}
-              />
-            </div>
-          </div>
-
-          {/* Approve single */}
-          <button
-            onClick={handleApprove}
-            disabled={!isValid() || submitting}
-            className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-black font-medium py-2.5 rounded-xl text-sm transition-colors"
-          >
-            {submitting ? 'Saving…' : 'Approve →'}
-          </button>
-
-          {/* Bulk approve — only shown when other rows share same vendor */}
-          {sameVendorRows.length > 0 && (
+        <div className="ml-auto flex items-center gap-2">
+          {approvedCount === rows.length ? (
             <button
-              onClick={handleBulkApprove}
-              disabled={!isValid() || submitting}
-              className="w-full bg-accent hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-xl text-sm transition-colors"
+              onClick={() => navigate(`/jobs/${jobId}/export`)}
+              className="bg-green-500 hover:bg-green-400 text-black font-medium px-4 py-2 rounded-lg text-sm transition-colors"
             >
-              {submitting ? 'Saving…' : `Bulk Approve all ${sameVendorRows.length + 1} rows →`}
+              Go to Export →
+            </button>
+          ) : (
+            <button
+              onClick={handleApproveAll}
+              disabled={validPendingCount === 0}
+              className="bg-accent hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+            >
+              Approve All Valid ({validPendingCount})
             </button>
           )}
-
-          <button
-            onClick={handleSkip}
-            disabled={submitting}
-            className="w-full text-center text-xs text-white/30 hover:text-white/60 transition-colors py-1 disabled:opacity-40"
-          >
-            Skip for now
-          </button>
         </div>
       </div>
+
+      {/* Column legend */}
+      <div className="flex items-center gap-5 text-[11px] text-white/30 px-1">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2.5 h-2.5 rounded border border-amber-500/60 bg-amber-500/10" />
+          Needs attention — fill in before approving
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          Vendor columns
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+          GL columns
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2.5 h-2.5 rounded border border-green-500/40 bg-green-500/10" />
+          Approved
+        </span>
+      </div>
+
+      {/* Review table */}
+      <div className="bg-surface-card border border-surface-border rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-surface-border bg-surface-raised sticky top-0 z-10">
+                {/* Read-only context columns */}
+                <th className="text-left text-white/40 font-normal px-4 py-3 whitespace-nowrap">Company</th>
+                <th className="text-left text-white/40 font-normal px-4 py-3 whitespace-nowrap">File Name</th>
+                <th className="text-left text-white/40 font-normal px-4 py-3 whitespace-nowrap">Reason</th>
+                {/* Editable columns — highlighted headers */}
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="text-white/40">Outlet Code</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="text-white/40">Doc Category</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="text-white/40">Date</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="text-white/40">Invoice #</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="text-white/40">CN #</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="text-white/40">Doc Type</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 min-w-[180px]">
+                  <span className="text-white/40">Description</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="flex items-center gap-1 text-amber-400/80">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    Vendor Code
+                  </span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 min-w-[140px]">
+                  <span className="flex items-center gap-1 text-amber-400/80">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    Vendor Name
+                  </span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="flex items-center gap-1 text-orange-400/80">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                    Account Code
+                  </span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 min-w-[140px]">
+                  <span className="flex items-center gap-1 text-orange-400/80">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                    Account Desc.
+                  </span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="text-white/40">Debit</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="text-white/40">Credit</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 whitespace-nowrap">
+                  <span className="text-white/40">Page #</span>
+                </th>
+                <th className="text-left font-normal px-4 py-3 min-w-[140px]">
+                  <span className="text-white/40">Extraction Remarks</span>
+                </th>
+                <th className="text-left text-white/40 font-normal px-4 py-3 whitespace-nowrap">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-surface-border">
+              {rows.map((row) => {
+                const edit        = getEdit(row.id)
+                const isApproved  = approved.has(row.id)
+                const isSaving    = saving.has(row.id)
+                const isValid     = isRowValid(row.id)
+                const meta        = REASON_META[row.reviewReason]
+
+                const vendorFlag  = row.reviewReason === 'vendor_unmatched' || row.reviewReason === 'low_confidence'
+                const glFlag      = row.reviewReason === 'gl_unmatched'     || row.reviewReason === 'low_confidence'
+
+                const cell = (field, placeholder, highlight = false) =>
+                  isApproved ? (
+                    <span className="font-mono text-green-400/70 text-xs">{edit[field] || '—'}</span>
+                  ) : (
+                    <EditableCell
+                      value={edit[field]}
+                      onChange={(v) => updateEdit(row.id, field, v)}
+                      highlight={highlight && !edit[field].trim()}
+                      placeholder={placeholder}
+                    />
+                  )
+
+                return (
+                  <tr
+                    key={row.id}
+                    className={`transition-colors ${
+                      isApproved ? 'bg-green-500/5 opacity-60' : 'hover:bg-surface-raised/20'
+                    }`}
+                  >
+                    {/* Company — read-only */}
+                    <td className="px-4 py-2.5 text-white/50 whitespace-nowrap text-xs">
+                      {row.companyName ?? '—'}
+                    </td>
+
+                    {/* File Name — read-only */}
+                    <td className="px-4 py-2.5 font-mono text-white/30 max-w-[150px]">
+                      <span className="block truncate text-[10px]" title={row.originalFilename}>
+                        {row.originalFilename ?? '—'}
+                      </span>
+                    </td>
+
+                    {/* Reason — read-only */}
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      {meta ? (
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${meta.bg} ${meta.color}`}>
+                          <span className={`w-1 h-1 rounded-full ${meta.dot}`} />
+                          {meta.label}
+                        </span>
+                      ) : <span className="text-white/20 text-xs">—</span>}
+                    </td>
+
+                    {/* Outlet Code — editable */}
+                    <td className="px-4 py-2.5">{cell('outletCode', 'F5063')}</td>
+
+                    {/* Doc Category — editable */}
+                    <td className="px-4 py-2.5">{cell('documentCategory', 'INVOICE')}</td>
+
+                    {/* Date — editable */}
+                    <td className="px-4 py-2.5">{cell('date', 'YYYY-MM-DD')}</td>
+
+                    {/* Invoice # — editable */}
+                    <td className="px-4 py-2.5">{cell('invoiceNumber', 'INV-001')}</td>
+
+                    {/* CN # — editable */}
+                    <td className="px-4 py-2.5">{cell('cnNumber', 'CN-001')}</td>
+
+                    {/* Doc Type — editable */}
+                    <td className="px-4 py-2.5">{cell('documentType', 'TAX INVOICE')}</td>
+
+                    {/* Description — editable */}
+                    <td className="px-4 py-2.5">{cell('documentDescription', 'Description')}</td>
+
+                    {/* Vendor Code — editable + amber highlight */}
+                    <td className="px-4 py-2.5">{cell('vendorCode', '4000/I01', vendorFlag)}</td>
+
+                    {/* Vendor Name — editable + amber highlight */}
+                    <td className="px-4 py-2.5">{cell('vendorNameMatched', 'Vendor name', vendorFlag)}</td>
+
+                    {/* Account Code (GL Code) — editable + orange highlight */}
+                    <td className="px-4 py-2.5">{cell('glCode', '6011/000', glFlag)}</td>
+
+                    {/* Account Desc (GL Label) — editable + orange highlight */}
+                    <td className="px-4 py-2.5">{cell('glLabel', 'GL description', glFlag)}</td>
+
+                    {/* Debit — editable */}
+                    <td className="px-4 py-2.5">{cell('debit', '0.00')}</td>
+
+                    {/* Credit — editable */}
+                    <td className="px-4 py-2.5">{cell('credit', '0.00')}</td>
+
+                    {/* Page # — editable */}
+                    <td className="px-4 py-2.5">{cell('pageNumber', '1')}</td>
+
+                    {/* Extraction Remarks — editable */}
+                    <td className="px-4 py-2.5">{cell('extractionRemarks', 'Remarks')}</td>
+
+                    {/* Approve button */}
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      {isApproved ? (
+                        <span className="text-green-400 text-[10px] font-medium">✓ Approved</span>
+                      ) : (
+                        <button
+                          onClick={() => handleApproveRow(row.id)}
+                          disabled={!isValid || isSaving}
+                          className="text-[11px] font-medium px-3 py-1 rounded bg-green-500/10 border border-green-500/30 text-green-400 hover:bg-green-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {isSaving ? '…' : 'Approve'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Bottom bar */}
+      {approvedCount > 0 && approvedCount < rows.length && (
+        <div className="flex items-center justify-between px-1">
+          <p className="text-xs text-white/30">
+            {pendingCount} row{pendingCount !== 1 ? 's' : ''} still pending
+          </p>
+          <button
+            onClick={() => navigate(`/jobs/${jobId}/export`)}
+            className="text-xs text-white/30 hover:text-white/60 transition-colors"
+          >
+            Skip remaining & go to export →
+          </button>
+        </div>
+      )}
     </div>
   )
 }

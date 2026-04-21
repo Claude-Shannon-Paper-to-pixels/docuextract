@@ -9,10 +9,24 @@ interface JwtPayload {
 }
 
 interface ReviewBody {
+  // Vendor / GL (required for approval)
   vendorCode?: string;
   vendorNameMatched?: string;
   glCode?: string;
   glLabel?: string;
+  // All other editable fields
+  date?: string;
+  documentDescription?: string;
+  documentType?: string;
+  documentCategory?: string;
+  invoiceNumber?: string;
+  cnNumber?: string;
+  debit?: string | null;
+  credit?: string | null;
+  outletCode?: string;
+  pageNumber?: number;
+  extractionRemarks?: string;
+  reviewNotes?: string;
 }
 
 export async function reviewRoutes(fastify: FastifyInstance) {
@@ -36,10 +50,22 @@ export async function reviewRoutes(fastify: FastifyInstance) {
         body: {
           type: 'object',
           properties: {
-            vendorCode: { type: 'string', examples: ['4000/I01'] },
-            vendorNameMatched: { type: 'string', examples: ['ILT OPTICS (M) SDN BHD'] },
-            glCode: { type: 'string', examples: ['6011/000'] },
-            glLabel: { type: 'string', examples: ['Purchases - Other Supplies'] },
+            vendorCode:          { type: 'string' },
+            vendorNameMatched:   { type: 'string' },
+            glCode:              { type: 'string' },
+            glLabel:             { type: 'string' },
+            date:                { type: 'string' },
+            documentDescription: { type: 'string' },
+            documentType:        { type: 'string' },
+            documentCategory:    { type: 'string', enum: ['SOA', 'INVOICE', 'CN', 'PAYMENT'] },
+            invoiceNumber:       { type: 'string' },
+            cnNumber:            { type: 'string' },
+            debit:               { type: ['string', 'null'] },
+            credit:              { type: ['string', 'null'] },
+            outletCode:          { type: 'string' },
+            pageNumber:          { type: 'integer' },
+            extractionRemarks:   { type: 'string' },
+            reviewNotes:         { type: 'string' },
           },
         },
         response: {
@@ -90,14 +116,39 @@ export async function reviewRoutes(fastify: FastifyInstance) {
       const updated = await prisma.transaction.update({
         where: { id: rowId },
         data: {
-          ...(body.vendorCode !== undefined && { vendorCode: body.vendorCode }),
-          ...(body.vendorNameMatched !== undefined && { vendorNameMatched: body.vendorNameMatched }),
-          ...(body.glCode !== undefined && { glCode: body.glCode }),
-          ...(body.glLabel !== undefined && { glLabel: body.glLabel }),
+          // Vendor / GL
+          ...(body.vendorCode !== undefined          && { vendorCode: body.vendorCode }),
+          ...(body.vendorNameMatched !== undefined   && { vendorNameMatched: body.vendorNameMatched }),
+          ...(body.glCode !== undefined              && { glCode: body.glCode }),
+          ...(body.glLabel !== undefined             && { glLabel: body.glLabel }),
+          // Document fields
+          ...(body.date !== undefined                && { date: new Date(body.date) }),
+          ...(body.documentDescription !== undefined && { documentDescription: body.documentDescription }),
+          ...(body.documentType !== undefined        && { documentType: body.documentType }),
+          ...(body.documentCategory !== undefined    && { documentCategory: body.documentCategory as any }),
+          ...(body.invoiceNumber !== undefined       && { invoiceNumber: body.invoiceNumber }),
+          ...(body.cnNumber !== undefined            && { cnNumber: body.cnNumber }),
+          ...(body.debit !== undefined               && { debit: body.debit?.trim() || null }),
+          ...(body.credit !== undefined              && { credit: body.credit?.trim() || null }),
+          ...(body.outletCode !== undefined          && { outletCode: body.outletCode }),
+          ...(body.pageNumber !== undefined          && { pageNumber: body.pageNumber }),
+          ...(body.extractionRemarks !== undefined   && { extractionRemarks: body.extractionRemarks }),
+          ...(body.reviewNotes !== undefined         && { reviewNotes: body.reviewNotes }),
           glMatchMethod: 'manual',
           status: 'reviewed',
           reviewedById: jwtUser.id,
           reviewedAt: new Date(),
+        },
+      });
+
+      // Audit log — per-row approve/edit
+      const docRef = updated.invoiceNumber || updated.cnNumber || updated.documentDescription
+      await prisma.auditLog.create({
+        data: {
+          userId:    jwtUser.id,
+          userEmail: jwtUser.email,
+          action:    'approve_row',
+          detail:    `${job.originalFilename} — ${docRef}`,
         },
       });
 
@@ -144,6 +195,16 @@ export async function reviewRoutes(fastify: FastifyInstance) {
               completedAt: new Date(),
             },
           });
+
+          // Audit log — review completed
+          await prisma.auditLog.create({
+            data: {
+              userId:    jwtUser.id,
+              userEmail: jwtUser.email,
+              action:    'complete_review',
+              detail:    job.originalFilename,
+            },
+          });
         }
       }
 
@@ -183,9 +244,23 @@ export async function reviewRoutes(fastify: FastifyInstance) {
       const rows = await prisma.transaction.findMany({
         where: { jobId: id, status: 'needs_review' },
         orderBy: [{ pageNumber: 'asc' }],
+        include: {
+          job: {
+            select: {
+              originalFilename: true,
+              client: { select: { name: true } },
+            },
+          },
+        },
       });
 
-      return { total: rows.length, rows };
+      const mapped = rows.map(({ job, ...r }) => ({
+        ...r,
+        companyName: job.client.name,
+        originalFilename: job.originalFilename,
+      }));
+
+      return { total: mapped.length, rows: mapped };
     },
   );
 

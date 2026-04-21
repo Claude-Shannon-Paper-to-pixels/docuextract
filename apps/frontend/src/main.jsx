@@ -12,6 +12,7 @@ import JobStatus   from './pages/JobStatus'
 import JobDetails  from './pages/JobDetails'
 import Review      from './pages/Review'
 import Export      from './pages/Export'
+import AuditLog    from './pages/AuditLog'
 import AppShell  from './components/AppShell'
 
 const queryClient = new QueryClient()
@@ -45,6 +46,7 @@ createRoot(document.getElementById('root')).render(
             <Route path="jobs/:jobId/details"    element={<JobDetails />} />
             <Route path="jobs/:jobId/review"     element={<Review />} />
             <Route path="jobs/:jobId/export"     element={<Export />} />
+            <Route path="audit-log"              element={<AuditLog />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
