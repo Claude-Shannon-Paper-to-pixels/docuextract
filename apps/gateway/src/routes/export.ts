@@ -7,6 +7,7 @@ interface JwtPayload {
   id: string;
   email: string;
   role: string;
+  
 }
 
 export async function exportRoutes(fastify: FastifyInstance) {
