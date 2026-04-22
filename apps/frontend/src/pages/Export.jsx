@@ -46,13 +46,8 @@ export default function Export() {
 
       {/* Stats */}
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-3">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="bg-surface-card border border-surface-border rounded-xl p-4 animate-pulse">
-              <div className="h-3 bg-surface-raised rounded w-20 mb-2" />
-              <div className="h-7 bg-surface-raised rounded w-12" />
-            </div>
-          ))}
+        <div className="flex items-center justify-center py-16">
+          <div className="loader" />
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3">

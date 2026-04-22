@@ -228,10 +228,7 @@ export default function JobDetails() {
       <div className="bg-surface-card border border-surface-border rounded-lg overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="text-center">
-              <div className="w-6 h-6 rounded-full border-2 border-accent/30 border-t-accent animate-spin mx-auto mb-3" />
-              <p className="text-white/40 text-xs">Loading rows…</p>
-            </div>
+            <div className="loader" />
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">

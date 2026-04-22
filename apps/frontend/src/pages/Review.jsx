@@ -177,10 +177,7 @@ export default function Review() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="w-6 h-6 rounded-full border-2 border-accent/30 border-t-accent animate-spin mx-auto mb-3" />
-          <p className="text-white/40 text-sm">Loading rows…</p>
-        </div>
+        <div className="loader" />
       </div>
     )
   }

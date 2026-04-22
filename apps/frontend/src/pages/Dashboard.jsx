@@ -7,13 +7,18 @@ import StatusBadge from '../components/StatusBadge'
 
 export default function Dashboard() {
   const [jobs, setJobs]           = useState([])
+  const [loading, setLoading]     = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [retrying, setRetrying]   = useState(null)
   const navigate = useNavigate()
 
   function loadJobs() {
-    getJobs().then(setJobs).catch(console.error)
+    setLoading(true)
+    getJobs()
+      .then(setJobs)
+      .catch(console.error)
+      .finally(() => setLoading(false))
   }
 
   async function handleRetry(jobId) {
@@ -82,12 +87,7 @@ export default function Dashboard() {
         
         {uploading ? (
           <div className="px-8 py-8 flex items-center justify-center">
-            <div className="text-center">
-              <div className="inline-block">
-                <div className="w-8 h-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin mb-3" />
-              </div>
-              <p className="text-white/60 text-sm font-medium">Uploading document…</p>
-            </div>
+            <div className="loader" style={{ fontSize: '18px' }} />
           </div>
         ) : isDragActive ? (
           <div className="px-8 py-8 flex items-center justify-center">
@@ -123,34 +123,40 @@ export default function Dashboard() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-surface-card border border-surface-border rounded-lg p-5">
-          <p className="text-white/40 text-xs uppercase tracking-wider mb-2">Total Submitted</p>
-          <p className="text-3xl font-mono font-semibold text-white">{stats.submitted}</p>
-          <p className="text-white/30 text-xs mt-2">Documents uploaded</p>
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-4">
+          <div className="loader" />
         </div>
+      ) : (
+        <div className="grid grid-cols-4 gap-4">
+          <div className="bg-surface-card border border-surface-border rounded-lg p-5">
+            <p className="text-white/40 text-xs uppercase tracking-wider mb-2">Total Submitted</p>
+            <p className="text-3xl font-mono font-semibold text-white">{stats.submitted}</p>
+            <p className="text-white/30 text-xs mt-2">Documents uploaded</p>
+          </div>
 
-        <div className="bg-surface-card border border-surface-border rounded-lg p-5">
-          <p className="text-white/40 text-xs uppercase tracking-wider mb-2">Under Review</p>
-          <p className="text-3xl font-mono font-semibold text-amber-400">{stats.underReview}</p>
-          <p className="text-white/30 text-xs mt-2">Waiting for approval</p>
-        </div>
+          <div className="bg-surface-card border border-surface-border rounded-lg p-5">
+            <p className="text-white/40 text-xs uppercase tracking-wider mb-2">Under Review</p>
+            <p className="text-3xl font-mono font-semibold text-amber-400">{stats.underReview}</p>
+            <p className="text-white/30 text-xs mt-2">Waiting for approval</p>
+          </div>
 
-        <div className="bg-surface-card border border-surface-border rounded-lg p-5">
-          <p className="text-white/40 text-xs uppercase tracking-wider mb-2">Completed</p>
-          <p className="text-3xl font-mono font-semibold text-green-400">{stats.completed}</p>
-          <p className="text-white/30 text-xs mt-2">Ready to export</p>
-        </div>
+          <div className="bg-surface-card border border-surface-border rounded-lg p-5">
+            <p className="text-white/40 text-xs uppercase tracking-wider mb-2">Completed</p>
+            <p className="text-3xl font-mono font-semibold text-green-400">{stats.completed}</p>
+            <p className="text-white/30 text-xs mt-2">Ready to export</p>
+          </div>
 
-        <div className="bg-surface-card border border-surface-border rounded-lg p-5">
-          <p className="text-white/40 text-xs uppercase tracking-wider mb-2">Failed</p>
-          <p className="text-3xl font-mono font-semibold text-red-400">{stats.failed}</p>
-          <p className="text-white/30 text-xs mt-2">Processing errors</p>
+          <div className="bg-surface-card border border-surface-border rounded-lg p-5">
+            <p className="text-white/40 text-xs uppercase tracking-wider mb-2">Failed</p>
+            <p className="text-3xl font-mono font-semibold text-red-400">{stats.failed}</p>
+            <p className="text-white/30 text-xs mt-2">Processing errors</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Job History Table */}
-      {jobs.length > 0 && (
+      {!loading && jobs.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm text-white/40 uppercase tracking-wider font-medium">
@@ -167,7 +173,6 @@ export default function Dashboard() {
                 <thead>
                   <tr className="border-b border-surface-border bg-surface-raised/40">
                     <th className="text-left text-white/40 font-normal px-6 py-4">File Name</th>
-                    <th className="text-left text-white/40 font-normal px-6 py-4">Outlet</th>
                     <th className="text-left text-white/40 font-normal px-6 py-4">Submitted</th>
                     <th className="text-left text-white/40 font-normal px-6 py-4">Status</th>
                     <th className="text-left text-white/40 font-normal px-6 py-4">Rows</th>
@@ -182,9 +187,6 @@ export default function Dashboard() {
                     >
                       <td className="px-6 py-4 font-mono text-xs text-white/70 truncate max-w-xs">
                         {job.originalFilename}
-                      </td>
-                      <td className="px-6 py-4 font-mono text-xs text-white/50">
-                        {job.outletCode ?? '—'}
                       </td>
                       <td className="px-6 py-4 text-white/50 text-xs">
                         {new Date(job.createdAt).toLocaleDateString('en-US', {
@@ -229,7 +231,7 @@ export default function Dashboard() {
       )}
 
       {/* Empty state */}
-      {jobs.length === 0 && (
+      {!loading && jobs.length === 0 && (
         <div className="text-center py-16">
           <div className="inline-block mb-4">
             <div className="flex items-center justify-center h-16 w-16 rounded-full bg-surface-raised">

@@ -51,7 +51,7 @@ export default function AuditLog() {
 
       {loading && (
         <div className="flex items-center justify-center py-20">
-          <div className="w-6 h-6 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
+          <div className="loader" />
         </div>
       )}
 
